@@ -1,3 +1,8 @@
+> 🏔️ **Note:** This is a fork of
+> [`lovell/sharp-libvips`](https://github.com/lovell/sharp-libvips) for
+> [Alpine](https://alpine.inc). It adds support for `.heic` files (decoding
+> only), `.pdf` files, and `.bmp` files.
+
 # Packaging scripts
 
 libvips and its dependencies are provided as pre-compiled shared libraries
