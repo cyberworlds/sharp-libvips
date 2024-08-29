@@ -360,7 +360,8 @@ $CURL https://www.freedesktop.org/software/fontconfig/release/fontconfig-${VERSI
 cd ${DEPS}/fontconfig
 meson setup _build --default-library=static --buildtype=release --strip --prefix=${TARGET} ${MESON} \
   -Dcache-build=disabled -Ddoc=disabled -Dnls=disabled -Dtests=disabled -Dtools=disabled \
-  ${LINUX:+--sysconfdir=/etc} ${DARWIN:+--sysconfdir=/usr/local/etc}
+  ${LINUX:+--localstatedir=/var --datadir=/usr/share --sysconfdir=/etc} \
+  ${DARWIN:+--localstatedir=/usr/local/var --datadir=/usr/local/share --sysconfdir=/usr/local/etc}
 meson install -C _build --tag devel
 
 mkdir ${DEPS}/harfbuzz
