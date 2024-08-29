@@ -9,7 +9,6 @@ jobs:
         os: [ ubuntu-22.04 ]
         platform:
           - 'linux-x64'
-          - 'linux-arm64v8'
         include:
           - os: macos-12
             platform: 'darwin-x64'
@@ -23,11 +22,6 @@ jobs:
         run: |
           pip3 install meson ninja packaging
           brew install automake nasm
-      - name: Install dependencies (Linux arm64v8)
-        if: matrix.platform == 'linux-arm64v8'
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y qemu qemu-user-static binfmt-support
       - name: Build ${{ matrix.platform }}
         id: build-release
         env:

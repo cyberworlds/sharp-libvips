@@ -2,6 +2,9 @@
 > [`lovell/sharp-libvips`](https://github.com/lovell/sharp-libvips) for
 > [Alpine](https://alpine.inc). It adds support for `.heic` files (decoding
 > only), `.pdf` files, and `.bmp` files.
+>
+> You'll need to build for Linux arm64 machines manually. As GitHub Actions
+> hosted runners doesn't yet support Linux arm64 machines.
 
 # Packaging scripts
 

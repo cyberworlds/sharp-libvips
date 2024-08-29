@@ -40,7 +40,7 @@ RUN \
   # but we want to install GCC 10. Ideally we'd find a way to install `libtool`
   # without installing GCC 7, but for now override GCC 7 binaries with GCC 10
   # symlinks.
-  yum install -y --setopt=tsflags=nodocs libtool --skip-broken && \
+  yum install -y --setopt=tsflags=nodocs libtool && \
   rm /usr/bin/cc && ln -s /usr/bin/gcc10-gcc /usr/bin/cc && \
   ln -s /usr/bin/gcc10-g++ /usr/bin/c++ && \
   rm /usr/bin/as && ln -s /usr/bin/gcc10-as /usr/bin/as && \
