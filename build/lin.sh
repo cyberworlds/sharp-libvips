@@ -21,6 +21,25 @@ case ${PLATFORM} in
     ;;
 esac
 
+case ${PLATFORM} in
+  linux-x64)
+    PDFIUM_PLATFORM=linux-x64
+    ;;
+  linux-arm64v8)
+    PDFIUM_PLATFORM=linux-arm64
+    ;;
+  darwin-x64)
+    PDFIUM_PLATFORM=mac-x64
+    ;;
+  darwin-arm64v8)
+    PDFIUM_PLATFORM=mac-arm64
+    ;;
+  *)
+    echo "Unsupported platform ${PLATFORM}"
+    exit 1
+    ;;
+esac
+
 mkdir ${DEPS}
 mkdir ${TARGET}
 
@@ -119,6 +138,9 @@ VERSION_RSVG=2.58.93
 VERSION_AOM=3.9.1
 VERSION_HEIF=1.18.2
 VERSION_CGIF=0.4.1
+VERSION_DE265=1.0.15
+VERSION_GRAPHICSMAGICK=1.3.45
+VERSION_CHROMIUM_PDFIUM=6679
 
 # Remove patch version component
 without_patch() {
@@ -264,6 +286,23 @@ AOM_AS_FLAGS="${FLAGS}" cmake -G"Unix Makefiles" \
   ..
 make install/strip
 
+# NOTE(calebmer): We need de265 for decoding `.heic` files (Apple's default
+# image format). We do not support encoding `.heic` files since the library
+# recommended to do that by libheif is [x265][1] which is GPL licensed. de265 is
+# LGPL licensed so it's fine to use.
+#
+# [1]: https://www.videolan.org/developers/x265.html
+mkdir ${DEPS}/de265
+$CURL https://github.com/strukturag/libde265/releases/download/v${VERSION_DE265}/libde265-${VERSION_DE265}.tar.gz | tar xzC ${DEPS}/de265 --strip-components=1
+cd ${DEPS}/de265
+./autogen.sh
+./configure --host=${CHOST} --prefix=${TARGET} --enable-static --disable-shared --disable-dependency-tracking \
+  --disable-dec265 --disable-sherlock265
+CFLAGS="${CFLAGS} -O3" CXXFLAGS="${CXXFLAGS} -O3" cmake -G"Unix Makefiles" \
+  -DCMAKE_TOOLCHAIN_FILE=${ROOT}/Toolchain.cmake -DCMAKE_INSTALL_PREFIX=${TARGET} -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release \
+  -DENABLE_SDL=FALSE -DBUILD_SHARED_LIBS=FALSE
+make install/strip
+
 mkdir ${DEPS}/heif
 $CURL https://github.com/strukturag/libheif/releases/download/v${VERSION_HEIF}/libheif-${VERSION_HEIF}.tar.gz | tar xzC ${DEPS}/heif --strip-components=1
 cd ${DEPS}/heif
@@ -271,7 +310,7 @@ cd ${DEPS}/heif
 sed -i'.bak' "/^cmake_minimum_required/s/3.16.3/3.12/" CMakeLists.txt
 CFLAGS="${CFLAGS} -O3" CXXFLAGS="${CXXFLAGS} -O3" cmake -G"Unix Makefiles" \
   -DCMAKE_TOOLCHAIN_FILE=${ROOT}/Toolchain.cmake -DCMAKE_INSTALL_PREFIX=${TARGET} -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_SHARED_LIBS=FALSE -DBUILD_TESTING=0 -DENABLE_PLUGIN_LOADING=0 -DWITH_EXAMPLES=0 -DWITH_LIBDE265=0 -DWITH_X265=0
+  -DBUILD_SHARED_LIBS=FALSE -DBUILD_TESTING=0 -DENABLE_PLUGIN_LOADING=0 -DWITH_EXAMPLES=0 -DWITH_LIBDE265=1 -DWITH_X265=0
 make install/strip
 
 mkdir ${DEPS}/jpeg
@@ -446,6 +485,36 @@ CFLAGS="${CFLAGS} -O3" meson setup _build --default-library=static --buildtype=r
   -Dtests=false
 meson install -C _build --tag devel
 
+mkdir ${DEPS}/graphicsmagick
+$CURL https://sourceforge.net/projects/graphicsmagick/files/graphicsmagick/${VERSION_GRAPHICSMAGICK}/GraphicsMagick-${VERSION_GRAPHICSMAGICK}.tar.xz | tar xJC ${DEPS}/graphicsmagick --strip-components=1
+cd ${DEPS}/graphicsmagick
+# NOTE(calebmer): Right now, we only want GraphicsMagick for `.bmp` files. So
+# disable support for any libraries we don't want to use with GraphicsMagick.
+./configure --host=${CHOST} --prefix=${TARGET} --enable-static --disable-shared --disable-dependency-tracking \
+  --disable-compressed-files --disable-openmp --without-bzlib --without-jbig --without-webp \
+  --without-jp2 --without-jpeg --without-lcms2 --without-lzma --without-png --without-tiff \
+  --without-ttf --without-libzip --without-wmf --without-xml --without-zlib --without-zstd \
+  --enable-magick-compat --with-modules
+make install-strip doc_DATA= bin_PROGRAMS= man_MANS=
+
+mkdir ${DEPS}/pdfium
+$CURL https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F${VERSION_CHROMIUM_PDFIUM}/pdfium-${PDFIUM_PLATFORM}.tgz | tar xzC ${DEPS}/pdfium
+cd ${DEPS}/pdfium
+cp ${DEPS}/pdfium/lib/* ${TARGET}/lib
+cp -R ${DEPS}/pdfium/include/. ${TARGET}/include
+cat > ${TARGET}/lib/pkgconfig/pdfium.pc << EOF
+prefix=${TARGET}
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+Name: pdfium
+Description: pdfium
+Version: ${VERSION_CHROMIUM_PDFIUM}
+Requires:
+Libs: -L\${libdir} -lpdfium
+Cflags: -I\${includedir}
+EOF
+
 mkdir ${DEPS}/vips
 $CURL https://github.com/libvips/libvips/releases/download/v${VERSION_VIPS}/vips-$(without_prerelease $VERSION_VIPS).tar.xz | tar xJC ${DEPS}/vips --strip-components=1
 cd ${DEPS}/vips
@@ -468,9 +537,9 @@ fi
 sed -i'.bak' "/subdir('man')/{N;N;N;N;d;}" meson.build
 CFLAGS="${CFLAGS} -O3" CXXFLAGS="${CXXFLAGS} -O3" meson setup _build --default-library=shared --buildtype=release --strip --prefix=${TARGET} ${MESON} \
   -Ddeprecated=false -Dexamples=false -Dintrospection=disabled -Dmodules=disabled -Dcfitsio=disabled -Dfftw=disabled -Djpeg-xl=disabled \
-  ${WITHOUT_HIGHWAY:+-Dhighway=disabled} -Dorc=disabled -Dmagick=disabled -Dmatio=disabled -Dnifti=disabled -Dopenexr=disabled \
-  -Dopenjpeg=disabled -Dopenslide=disabled -Dpdfium=disabled -Dpoppler=disabled -Dquantizr=disabled \
-  -Dppm=false -Danalyze=false -Dradiance=false \
+  ${WITHOUT_HIGHWAY:+-Dhighway=disabled} -Dorc=disabled -Dmagick=enabled -Dmatio=disabled -Dnifti=disabled -Dopenexr=disabled \
+  -Dopenjpeg=disabled -Dopenslide=disabled -Dpdfium=enabled -Dpoppler=disabled -Dquantizr=disabled \
+  -Dppm=false -Danalyze=false -Dradiance=false -Dmagick-package=GraphicsMagick \
   ${LINUX:+-Dcpp_link_args="$LDFLAGS -Wl,-Bsymbolic-functions -Wl,--version-script=$DEPS/vips/vips.map $EXCLUDE_LIBS"}
 meson install -C _build --tag runtime,devel
 
@@ -493,12 +562,12 @@ function copydeps {
   if [ "$LINUX" = true ]; then
     local dependencies=$(readelf -d $base | grep NEEDED | awk '{ print $5 }' | tr -d '[]')
   elif [ "$DARWIN" = true ]; then
-    local dependencies=$(otool -LX $base | awk '{print $1}' | grep $TARGET)
+    local dependencies=$(otool -LX $base | awk '{print $1}' | grep -e $TARGET -e ./libpdfium.dylib)
 
     install_name_tool -id @rpath/$base $dest_dir/$base
   fi
 
-  for dep in $dependencies; do
+  while IFS= read -r dep; do
     base_dep=$(basename $dep)
 
     [ ! -f "$PWD/$base_dep" ] && echo "$base_dep does not exist in $PWD" && continue
@@ -512,7 +581,7 @@ function copydeps {
       # Call this function (recursive) on each dependency of this library
       copydeps $base_dep $dest_dir
     fi
-  done;
+  done <<< "$dependencies";
 }
 
 cd ${TARGET}/lib
@@ -552,13 +621,16 @@ printf "{\n\
   \"vips\": \"${VERSION_VIPS}\",\n\
   \"webp\": \"${VERSION_WEBP}\",\n\
   \"xml\": \"${VERSION_XML2}\",\n\
-  \"zlib-ng\": \"${VERSION_ZLIB_NG}\"\n\
+  \"zlib-ng\": \"${VERSION_ZLIB_NG}\",\n\
+  \"de265\": \"${VERSION_DE265}\",\n\
+  \"graphicsmagick\": \"${VERSION_GRAPHICSMAGICK}\",\n\
+  \"pdfium\": \"chromium/${VERSION_CHROMIUM_PDFIUM}\"\n\
 }" >versions.json
 
 printf "\"${PLATFORM}\"" >platform.json
 
 # Add third-party notices
-$CURL -O https://raw.githubusercontent.com/lovell/sharp-libvips/main/THIRD-PARTY-NOTICES.md
+$CURL -O https://raw.githubusercontent.com/cyberworlds/sharp-libvips/main/THIRD-PARTY-NOTICES.md
 
 # Create the tarball
 ls -al lib
